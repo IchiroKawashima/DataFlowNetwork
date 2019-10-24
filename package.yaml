@@ -29,6 +29,7 @@ dependencies:
 - clash-prelude
 
 - singletons
+- constraints
 
 ghc-options:
 - -fplugin=GHC.TypeLits.Normalise
