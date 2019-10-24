@@ -1,12 +1,14 @@
 {-# LANGUAGE Rank2Types #-}
 
-module Utils (dfold') where
+module Utils
+    ( dfold'
+    )
+where
 
 import           Clash.Prelude
 import           Data.Proxy
 import           Data.Kind
 import           Data.Singletons.Prelude        ( TyFun
-                                                , Apply
                                                 , type (@@)
                                                 )
 
