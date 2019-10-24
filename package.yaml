@@ -28,6 +28,8 @@ dependencies:
 - clash-lib
 - clash-prelude
 
+- singletons
+
 ghc-options:
 - -fplugin=GHC.TypeLits.Normalise
 - -fplugin=GHC.TypeLits.Extra.Solver
