@@ -1,0 +1,26 @@
+# Ignore All
+*
+!*/
+
+# Git
+!*.gitignore
+
+# Vscode
+!/.vscode/launch.json
+!/.vscode/tasks.json
+
+# Haskell
+!/app/**/*.hs
+!/src/**/*.hs
+!/test/**/*.hs
+!/scripts/**/*.hs
+
+# Stack
+!/package.yaml
+!/stack.yaml
+!/Setup.hs
+
+!/ChangeLog.md
+!/LICENSE
+!/README.md
+
