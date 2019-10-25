@@ -1,5 +1,4 @@
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Utils
     ( dfold'
@@ -13,28 +12,6 @@ import           Data.Singletons.Prelude        ( TyFun
                                                 , Apply
                                                 , type (@@)
                                                 )
-import           Data.Constraint
-import           Data.Constraint.Nat
-
-data Shifter (k :: Nat) (f :: TyFun Nat Type) :: Type
-type instance Apply (Shifter k) l = (BitVector l, BitVector (2 ^ (k - l)))
-
-shifter :: forall k . (KnownNat k, 1 <= k) => BitVector (2 ^ k) -> BitVector k
-shifter x = fst $ dfold' (Proxy @(Shifter k)) sft (def, x) $ repeat ()
-  where
-    sft
-        :: forall l
-         . (KnownNat l, l <= k - 1)
-        => SNat l
-        -> ()
-        -> Shifter k @@ l
-        -> Shifter k @@ (l + 1)
-    sft SNat () (shift, remnant) =
-        case plusMonotone1 @l @(k - 1) @1 *** plusMinusInverse3 @1 @k of
-            Sub Dict
-                | bitToBool $ reduceOr lowerBits -> (shift ++# 0, lowerBits)
-                | otherwise                      -> (shift ++# 1, higherBits)
-                where (higherBits, lowerBits) = split remnant
 
 dfold'
     :: forall p k a
