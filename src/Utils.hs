@@ -32,9 +32,9 @@ dfold'
     -> (p @@ k)
 dfold' Proxy f z = go
   where
-    go :: (KnownNat n, n <= k) => Vec n a -> p @@ n
+    go :: forall n . (KnownNat n, n <= k) => Vec n a -> p @@ n
     go Nil           = z
-    go (y `Cons` ys) = f (lengthS ys) y (go ys)
+    go (y `Cons` ys) = f (SNat @(n - 1)) y (go ys)
 {-# NOINLINE dfold' #-}
 
 dtfold'
