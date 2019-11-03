@@ -1,4 +1,5 @@
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 
 module Utils
     ( dfold'
@@ -15,6 +16,8 @@ import           Data.Singletons.Prelude        ( TyFun
                                                 )
 import           Data.Constraint
 import           Data.Constraint.Nat
+
+import qualified Data.List                     as L
 
 dfold'
     :: forall p k a
@@ -60,3 +63,32 @@ dtfold' Proxy f g = go
             Sub Dict -> g SNat (go xsl) (go xsr)
                 where (xsl, xsr) = splitAtI xs
 {-# NOINLINE dtfold' #-}
+
+foldDF
+    :: forall dom k a
+     . (KnownNat k)
+    => (forall a . a -> a -> a)
+    -> DataFlow dom (Vec (2 ^ k) Bool) Bool (Vec (2 ^ k) a) a
+foldDF f = DF go
+  where
+    go
+        :: forall n
+         . (KnownNat n)
+        => Signal dom (Vec n a)
+        -> Signal dom (Vec n Bool)
+        -> Signal dom Bool
+        -> (Signal dom a, Signal dom Bool, Signal dom (Vec n Bool))
+    go ds vs r = (d, v, rs)
+      where
+        (dsl, dsr)     = unbundle $ splitAtI <$> ds
+        (vsl, vsr)     = unbundle $ splitAtI <$> vs
+        rs             = (++) <$> rsl <*> rsr
+
+        (dl, vl, rsl ) = go dsl vsl rl
+        (dr, vr, rsr ) = go dsr vsr rr
+
+        (d , v , rlrr) = df (lockStep `seqDF` pureDF (uncurry f))
+                            (bundle (dl, dr))
+                            (bundle (vl, vr))
+                            r
+        (rl, rr) = unbundle rlrr
