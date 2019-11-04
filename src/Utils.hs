@@ -1,10 +1,11 @@
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 
 module Utils
     ( dfold'
     , dtfold'
+    , dtfoldDF'
     )
 where
 
@@ -64,38 +65,45 @@ dtfold' Proxy f g = go
                 where (xsl, xsr) = splitAtI xs
 {-# NOINLINE dtfold' #-}
 
-foldDF
-    :: forall dom k a
-     . (KnownNat k, 1 <= k)
-    => (forall a . a -> a -> a)
-    -> DataFlow dom (Vec (2 ^ k) Bool) Bool (Vec (2 ^ k) a) a
-foldDF f = DF $ go (SNat @k)
+dtfoldDF'
+    :: forall dom p k a
+     . (KnownDomain dom, KnownNat k, NFDataX a)
+    => Proxy (p :: TyFun Nat Type -> Type)
+    -> DataFlow dom Bool Bool a (p @@ 0)
+    -> (  forall l
+        . (KnownNat l, l <= k - 1)
+       => SNat l
+       -> DataFlow dom Bool Bool (p @@ l, p @@ l) (p @@ (l + 1))
+       )
+    -> DataFlow dom (Vec (2 ^ k) Bool) Bool (Vec (2 ^ k) a) (p @@ k)
+dtfoldDF' Proxy f g = DF go
   where
     go
         :: forall n
-         . (KnownNat n, 1 <= n)
-        => SNat n
-        -> Signal dom (Vec (2 ^ n) a)
+         . (KnownNat n, n <= k)
+        => Signal dom (Vec (2 ^ n) a)
         -> Signal dom (Vec (2 ^ n) Bool)
         -> Signal dom Bool
-        -> ( Signal dom a
+        -> ( Signal dom (p @@ n)
            , Signal dom Bool
            , Signal dom (Vec (2 ^ n) Bool)
            )
-    go SNat d@((_ `Cons` Nil) :- _) v@((_ `Cons` Nil) :- _) r =
-        (head <$> d, head <$> v, singleton <$> r)
-    go SNat ds@((_ `Cons` _ `Cons` _) :- _) vs@((_ `Cons` _ `Cons` _) :- _) r =
-        (d, v, rs)
-      where
-        (dsl, dsr)     = unbundle $ splitAtI <$> ds
-        (vsl, vsr)     = unbundle $ splitAtI <$> vs
-        rs             = (++) <$> rsl <*> rsr
+    go d@((_ `Cons` Nil) :- _) v@((_ `Cons` Nil) :- _) r =
+        (d', v', repeat <$> r')
+        where (d', v', r') = df f (head <$> d) (head <$> v) r
+    go ds@((_ `Cons` _ `Cons` _) :- _) vs@((_ `Cons` _ `Cons` _) :- _) r =
+        case leTrans @(n - 1) @n @(k - 1) *** leTrans @(n - 1) @n @k of
+            Sub Dict -> (d, v, rs)
+              where
+                (unbundle -> (dsl, dsr))       = splitAtI <$> ds
+                (unbundle -> (vsl, vsr))       = splitAtI <$> vs
+                rs                             = (++) <$> rsl <*> rsr
 
-        (dl, vl, rsl ) = go (SNat @(n - 1)) dsl vsl rl
-        (dr, vr, rsr ) = go (SNat @(n - 1)) dsr vsr rr
+                (dl, vl, rsl                 ) = go dsl vsl rl
+                (dr, vr, rsr                 ) = go dsr vsr rr
 
-        (d , v , rlrr) = df (lockStep `seqDF` pureDF (uncurry f))
-                            (bundle (dl, dr))
-                            (bundle (vl, vr))
-                            r
-        (rl, rr) = unbundle rlrr
+                (d , v , unbundle -> (rl, rr)) = df (lockStep `seqDF` g SNat)
+                                                    (bundle (dl, dr))
+                                                    (bundle (vl, vr))
+                                                    r
+{-# NOINLINE dtfoldDF' #-}
