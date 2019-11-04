@@ -1,10 +1,10 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE ExplicitNamespaces #-}
 
 module Utils
     ( dfold'
     , dtfold'
+    , dfoldDF'
     , dtfoldDF'
     )
 where
@@ -64,6 +64,41 @@ dtfold' Proxy f g = go
             Sub Dict -> g SNat (go xsl) (go xsr)
                 where (xsl, xsr) = splitAtI xs
 {-# NOINLINE dtfold' #-}
+
+dfoldDF'
+    :: forall dom p k a
+     . (KnownDomain dom, KnownNat k, NFDataX a)
+    => Proxy (p :: TyFun Nat Type -> Type)
+    -> (  forall l
+        . (KnownNat l, l <= k - 1)
+       => SNat l
+       -> DataFlow dom Bool Bool (a, p @@ l) (p @@ (l + 1))
+       )
+    -> p @@ 0
+    -> DataFlow dom (Vec k Bool) Bool (Vec k a) (p @@ k)
+dfoldDF' Proxy f z = DF go
+  where
+    go
+        :: forall n
+         . (KnownNat n, n <= k)
+        => Signal dom (Vec n a)
+        -> Signal dom (Vec n Bool)
+        -> Signal dom Bool
+        -> ( Signal dom (p @@ n)
+           , Signal dom Bool
+           , Signal dom (Vec n Bool)
+           )
+    go (Nil :- _) (Nil :- _) r = (pure z, pure True, pure Nil)
+    go ds@((_ `Cons` _) :- _) vs@((_ `Cons` _) :- _) r =
+        case leTrans @(n - 1) @n @k of
+            Sub Dict -> (d, v, Cons <$> rsh <*> rst)
+      where
+        (d', v', rst                  ) = go (tail <$> ds) (tail <$> vs) r'
+        (d , v , unbundle -> (rsh, r')) = df (lockStep `seqDF` f SNat)
+                                             (bundle (head <$> ds, d'))
+                                             (bundle (head <$> vs, v'))
+                                             r
+{-# NOINLINE dfoldDF' #-}
 
 dtfoldDF'
     :: forall dom p k a
