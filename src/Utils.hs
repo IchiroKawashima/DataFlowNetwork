@@ -1,11 +1,13 @@
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Utils
     ( dfold'
     , dtfold'
-    , dfoldDF'
-    , dtfoldDF'
+    , foldrDF
+    , foldDF
+    , unfoldDF
     )
 where
 
@@ -55,17 +57,17 @@ dtfold'
        )
     -> Vec (2 ^ k) a
     -> (p @@ k)
-dtfold' Proxy f g = go
+dtfold' Proxy f0 fn = go
   where
     go :: forall n . (KnownNat n, n <= k) => Vec (2 ^ n) a -> p @@ n
-    go (x `Cons` Nil) = f x
+    go (x `Cons` Nil) = f0 x
     go xs@(_ `Cons` _ `Cons` _) =
         case leTrans @(n - 1) @n @(k - 1) *** leTrans @(n - 1) @n @k of
-            Sub Dict -> g SNat (go xsl) (go xsr)
+            Sub Dict -> fn SNat (go xsl) (go xsr)
                 where (xsl, xsr) = splitAtI xs
 {-# NOINLINE dtfold' #-}
 
-dfoldDF'
+foldrDF
     :: forall dom p k a
      . (KnownDomain dom, KnownNat k, NFDataX a)
     => Proxy (p :: TyFun Nat Type -> Type)
@@ -76,7 +78,7 @@ dfoldDF'
        )
     -> p @@ 0
     -> DataFlow dom (Vec k Bool) Bool (Vec k a) (p @@ k)
-dfoldDF' Proxy f z = DF go
+foldrDF Proxy f z = DF go
   where
     go
         :: forall n
@@ -91,16 +93,16 @@ dfoldDF' Proxy f z = DF go
     go (Nil :- _) (Nil :- _) r = (pure z, pure True, pure Nil)
     go ds@((_ `Cons` _) :- _) vs@((_ `Cons` _) :- _) r =
         case leTrans @(n - 1) @n @k of
-            Sub Dict -> (d, v, Cons <$> rsh <*> rst)
+            Sub Dict -> (d, v, Cons <$> rsHead <*> rsTail)
       where
-        (d', v', rst                  ) = go (tail <$> ds) (tail <$> vs) r'
-        (d , v , unbundle -> (rsh, r')) = df (lockStep `seqDF` f SNat)
-                                             (bundle (head <$> ds, d'))
-                                             (bundle (head <$> vs, v'))
-                                             r
-{-# NOINLINE dfoldDF' #-}
+        (d', v', rsTail                  ) = go (tail <$> ds) (tail <$> vs) r'
+        (d , v , unbundle -> (rsHead, r')) = df (lockStep `seqDF` f SNat)
+                                                (bundle (head <$> ds, d'))
+                                                (bundle (head <$> vs, v'))
+                                                r
+{-# NOINLINE foldrDF #-}
 
-dtfoldDF'
+foldDF
     :: forall dom p k a
      . (KnownDomain dom, KnownNat k, NFDataX a)
     => Proxy (p :: TyFun Nat Type -> Type)
@@ -111,7 +113,7 @@ dtfoldDF'
        -> DataFlow dom Bool Bool (p @@ l, p @@ l) (p @@ (l + 1))
        )
     -> DataFlow dom (Vec (2 ^ k) Bool) Bool (Vec (2 ^ k) a) (p @@ k)
-dtfoldDF' Proxy f g = DF go
+foldDF Proxy f0 fn = DF go
   where
     go
         :: forall n
@@ -125,7 +127,7 @@ dtfoldDF' Proxy f g = DF go
            )
     go d@((_ `Cons` Nil) :- _) v@((_ `Cons` Nil) :- _) r =
         (d', v', repeat <$> r')
-        where (d', v', r') = df f (head <$> d) (head <$> v) r
+        where (d', v', r') = df f0 (head <$> d) (head <$> v) r
     go ds@((_ `Cons` _ `Cons` _) :- _) vs@((_ `Cons` _ `Cons` _) :- _) r =
         case leTrans @(n - 1) @n @(k - 1) *** leTrans @(n - 1) @n @k of
             Sub Dict -> (d, v, rs)
@@ -137,8 +139,55 @@ dtfoldDF' Proxy f g = DF go
                 (dl, vl, rsl                 ) = go dsl vsl rl
                 (dr, vr, rsr                 ) = go dsr vsr rr
 
-                (d , v , unbundle -> (rl, rr)) = df (lockStep `seqDF` g SNat)
-                                                    (bundle (dl, dr))
-                                                    (bundle (vl, vr))
-                                                    r
-{-# NOINLINE dtfoldDF' #-}
+                (d , v , unbundle -> (rl, rr)) = df
+                    (lockStep `seqDF` fn SNat)
+                    (bundle (dl, dr))
+                    (bundle (vl, vr))
+                    r
+{-# NOINLINE foldDF #-}
+
+unfoldDF
+    :: forall dom p k a
+     . (KnownDomain dom, KnownNat k, NFDataX a)
+    => Proxy (p :: TyFun Nat Type -> Type)
+    -> (  forall l
+        . (KnownNat l, l <= k - 1)
+       => SNat l
+       -> DataFlow
+              dom
+              Bool
+              Bool
+              (p @@ l)
+              (p @@ (l + 1), p @@ (l + 1))
+       )
+    -> DataFlow dom Bool Bool (p @@ k) a
+    -> DataFlow dom Bool (Vec (2 ^ k) Bool) (p @@ 0) (Vec (2 ^ k) a)
+unfoldDF Proxy fn fk = DF $ go SNat
+  where
+    go
+        :: forall n
+         . (KnownNat n, n <= k)
+        => SNat n
+        -> Signal dom (p @@ (k - n))
+        -> Signal dom Bool
+        -> Signal dom (Vec (2 ^ n) Bool)
+        -> ( Signal dom (Vec (2 ^ n) a)
+           , Signal dom (Vec (2 ^ n) Bool)
+           , Signal dom Bool
+           )
+    go SNat d v r@((_ `Cons` Nil) :- _) = (repeat <$> d', repeat <$> v', r')
+        where (d', v', r') = df fk d v (head <$> r)
+    go SNat d v rs@((_ `Cons` _ `Cons` _) :- _) =
+        case leTrans @(n - 1) @n @k of
+            Sub Dict -> (ds, vs, r)
+              where
+                (unbundle -> (dl, dr), unbundle -> (vl, vr), r) =
+                    df (fn SNat `seqDF` stepLock) d v (bundle (rl, rr))
+
+                (dsl, vsl, rl)           = go (SNat @(n - 1)) dl vl rsl
+                (dsr, vsr, rr)           = go (SNat @(n - 1)) dr vr rsr
+
+                ds                       = (++) <$> dsl <*> dsr
+                vs                       = (++) <$> vsl <*> vsr
+                (unbundle -> (rsl, rsr)) = splitAtI <$> rs
+{-# NOINLINE unfoldDF #-}

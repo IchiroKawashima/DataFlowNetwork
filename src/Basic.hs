@@ -1,8 +1,9 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Basic
     ( encoder
+    , topEntity
     )
 where
 
@@ -43,32 +44,7 @@ encoder x = fst $ dfold' (Proxy @(Encoder k)) enc (def, x) $ repeat ()
 data Macc (int :: Nat) (frac :: Nat) (f :: TyFun Nat Type) :: Type
 type instance Apply (Macc int frac) l = SFixed (l + int + int) frac
 
-macc
-    :: (KnownNat int, KnownNat frac, KnownNat k)
-    => Vec (2 ^ k) (SFixed int frac)
-    -> Vec (2 ^ k) (SFixed int frac)
-    -> SFixed (k + int + int) frac
-macc = ((.) . (.))
-    (dtfold' (Proxy :: Proxy (Macc int frac))
-             (resizeF . uncurry mul)
-             (const add)
-    )
-    zip
-
--- macc'
---     :: (KnownNat int, KnownNat frac, KnownNat k)
---     => Vec (2 ^ k) (DataFlow dom Bool Bool (SFixed int frac) ())
---     -> Vec (2 ^ k) (DataFlow dom Bool Bool (SFixed int frac))
---     -> DataFlow dom Bool Bool (SFixed (k + int + int) frac)
--- macc' xs ys = dtfold' (Proxy :: Proxy (Macc int frac)) (pureDF (resizeF . uncurry mul)) (\SNat -> lockStep `seqDF` pureDF add) $ zip xs ys
-
--- macc' xs ys = fold (undefined ) $ zipWith (pureDF *) xs ys
-
--- data Macc' (a :: Type) (k :: Nat) (f :: TyFun Nat Type) :: Type
--- type instance Apply (Macc' a k) l = Vec (k - l) a
-
--- macc' = dtfold' Proxy f g
---   where
---     f = idDF
---     g = pureDF const
-
+topEntity = foldDF @System @(Macc 16 16) @16 @(SFixed 16 16, SFixed 16 16)
+    Proxy
+    (pureDF (resizeF . uncurry mul) `seqDF` hideClockResetEnable fifoDF d1 Nil)
+    (\SNat -> pureDF (uncurry add) `seqDF` hideClockResetEnable fifoDF d1 Nil)
