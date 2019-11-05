@@ -113,22 +113,23 @@ foldDF
        -> DataFlow dom Bool Bool (p @@ l, p @@ l) (p @@ (l + 1))
        )
     -> DataFlow dom (Vec (2 ^ k) Bool) Bool (Vec (2 ^ k) a) (p @@ k)
-foldDF Proxy f0 fn = DF go
+foldDF Proxy f0 fn = DF $ go SNat
   where
     go
         :: forall n
          . (KnownNat n, n <= k)
-        => Signal dom (Vec (2 ^ n) a)
+        => SNat n
+        -> Signal dom (Vec (2 ^ n) a)
         -> Signal dom (Vec (2 ^ n) Bool)
         -> Signal dom Bool
         -> ( Signal dom (p @@ n)
            , Signal dom Bool
            , Signal dom (Vec (2 ^ n) Bool)
            )
-    go d@((_ `Cons` Nil) :- _) v@((_ `Cons` Nil) :- _) r =
+    go SNat d@((_ `Cons` Nil) :- _) v@((_ `Cons` Nil) :- _) r =
         (d', v', repeat <$> r')
         where (d', v', r') = df f0 (head <$> d) (head <$> v) r
-    go ds@((_ `Cons` _ `Cons` _) :- _) vs@((_ `Cons` _ `Cons` _) :- _) r =
+    go SNat ds@((_ `Cons` _ `Cons` _) :- _) vs@((_ `Cons` _ `Cons` _) :- _) r =
         case leTrans @(n - 1) @n @(k - 1) *** leTrans @(n - 1) @n @k of
             Sub Dict -> (d, v, rs)
               where
@@ -136,8 +137,8 @@ foldDF Proxy f0 fn = DF go
                 (unbundle -> (vsl, vsr))       = splitAtI <$> vs
                 rs                             = (++) <$> rsl <*> rsr
 
-                (dl, vl, rsl                 ) = go dsl vsl rl
-                (dr, vr, rsr                 ) = go dsr vsr rr
+                (dl, vl, rsl                 ) = go (SNat @(n - 1)) dsl vsl rl
+                (dr, vr, rsr                 ) = go (SNat @(n - 1)) dsr vsr rr
 
                 (d , v , unbundle -> (rl, rr)) = df
                     (lockStep `seqDF` fn SNat)
